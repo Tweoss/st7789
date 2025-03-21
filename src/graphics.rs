@@ -1,10 +1,12 @@
-use embedded_graphics_core::pixelcolor::Rgb565;
-use embedded_graphics_core::prelude::{DrawTarget, IntoStorage, Point, Size};
-use embedded_graphics_core::{
+use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::prelude::ImageDimensions;
+use embedded_graphics::prelude::Pixel;
+use embedded_graphics::prelude::PixelColor;
+use embedded_graphics::prelude::{DrawTarget, IntoStorage, Point, Size};
+use embedded_graphics::{
     pixelcolor::raw::{RawData, RawU16},
     primitives::Rectangle,
 };
-use embedded_graphics_core::{prelude::OriginDimensions, Pixel};
 
 use embedded_hal::digital::v2::OutputPin;
 
@@ -24,18 +26,20 @@ where
             Orientation::Landscape | Orientation::LandscapeSwapped => Size::new(320, 240),
         };
 
-        Rectangle::new(Point::zero(), size)
+        Rectangle::new(
+            Point::zero(),
+            Point::new(size.width as i32, size.height as i32),
+        )
     }
 }
 
-impl<DI, RST, BL, PinE> DrawTarget for ST7789<DI, RST, BL>
+impl<DI, RST, BL, PinE> DrawTarget<Rgb565> for ST7789<DI, RST, BL>
 where
     DI: WriteOnlyDataCommand,
     RST: OutputPin<Error = PinE>,
     BL: OutputPin<Error = PinE>,
 {
     type Error = Error<PinE>;
-    type Color = Rgb565;
 
     #[cfg(not(feature = "batch"))]
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
@@ -63,55 +67,55 @@ where
         self.draw_batch(item)
     }
 
-    fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Self::Color>,
-    {
-        if let Some(bottom_right) = area.bottom_right() {
-            let mut count = 0u32;
-            let max = area.size.width * area.size.height;
+    // fn fill_contiguous<I>(&mut self, area: &Rectangle, colors: I) -> Result<(), Self::Error>
+    // where
+    //     I: IntoIterator<Item = Self::Color>,
+    // {
+    //     if let Some(bottom_right) = area.bottom_right() {
+    //         let mut count = 0u32;
+    //         let max = area.size.width * area.size.height;
 
-            let mut colors = colors
-                .into_iter()
-                .take_while(|_| {
-                    count += 1;
-                    count <= max
-                })
-                .map(|color| RawU16::from(color).into_inner());
+    //         let mut colors = colors
+    //             .into_iter()
+    //             .take_while(|_| {
+    //                 count += 1;
+    //                 count <= max
+    //             })
+    //             .map(|color| RawU16::from(color).into_inner());
 
-            let sx = area.top_left.x as u16;
-            let sy = area.top_left.y as u16;
-            let ex = bottom_right.x as u16;
-            let ey = bottom_right.y as u16;
-            self.set_pixels(sx, sy, ex, ey, &mut colors)
-        } else {
-            // nothing to draw
-            Ok(())
-        }
-    }
+    //         let sx = area.top_left.x as u16;
+    //         let sy = area.top_left.y as u16;
+    //         let ex = bottom_right.x as u16;
+    //         let ey = bottom_right.y as u16;
+    //         self.set_pixels(sx, sy, ex, ey, &mut colors)
+    //     } else {
+    //         // nothing to draw
+    //         Ok(())
+    //     }
+    // }
 
-    fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
-        let area = area.intersection(&self.framebuffer_bounding_box());
+    // fn fill_solid(&mut self, area: &Rectangle, color: Self::Color) -> Result<(), Self::Error> {
+    //     let area = area.intersection(&self.framebuffer_bounding_box());
 
-        if let Some(bottom_right) = area.bottom_right() {
-            let mut count = 0u32;
-            let max = area.size.width * area.size.height;
+    //     if let Some(bottom_right) = area.bottom_right() {
+    //         let mut count = 0u32;
+    //         let max = area.size.width * area.size.height;
 
-            let mut colors = core::iter::repeat(color.into_storage()).take_while(|_| {
-                count += 1;
-                count <= max
-            });
+    //         let mut colors = core::iter::repeat(color.into_storage()).take_while(|_| {
+    //             count += 1;
+    //             count <= max
+    //         });
 
-            let sx = area.top_left.x as u16;
-            let sy = area.top_left.y as u16;
-            let ex = bottom_right.x as u16;
-            let ey = bottom_right.y as u16;
-            self.set_pixels(sx, sy, ex, ey, &mut colors)
-        } else {
-            // nothing to draw
-            Ok(())
-        }
-    }
+    //         let sx = area.top_left.x as u16;
+    //         let sy = area.top_left.y as u16;
+    //         let ex = bottom_right.x as u16;
+    //         let ey = bottom_right.y as u16;
+    //         self.set_pixels(sx, sy, ex, ey, &mut colors)
+    //     } else {
+    //         // nothing to draw
+    //         Ok(())
+    //     }
+    // }
 
     fn clear(&mut self, color: Rgb565) -> Result<(), Self::Error>
     where
@@ -131,15 +135,33 @@ where
             }
         }
     }
+
+    fn draw_pixel(
+        &mut self,
+        item: embedded_graphics::drawable::Pixel<Rgb565>,
+    ) -> Result<(), Self::Error> {
+        self.set_pixel(item.0.x as u16, item.0.y as u16, item.1.into_storage())
+    }
+
+    fn size(&self) -> Size {
+        Size::new(self.size_x.into(), self.size_y.into()) // visible area, not RAM-pixel size
+    }
 }
 
-impl<DI, RST, BL, PinE> OriginDimensions for ST7789<DI, RST, BL>
+impl<DI, RST, BL, PinE> ImageDimensions for ST7789<DI, RST, BL>
 where
     DI: WriteOnlyDataCommand,
     RST: OutputPin<Error = PinE>,
     BL: OutputPin<Error = PinE>,
 {
-    fn size(&self) -> Size {
-        Size::new(self.size_x.into(), self.size_y.into()) // visible area, not RAM-pixel size
+    fn width(&self) -> u32 {
+        self.size_x as u32
     }
+
+    fn height(&self) -> u32 {
+        self.size_y as u32
+    }
+    // fn size(&self) -> Size {
+    //     Size::new(self.size_x.into(), self.size_y.into()) // visible area, not RAM-pixel size
+    // }
 }
